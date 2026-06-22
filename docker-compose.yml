@@ -1,0 +1,100 @@
+version: "3.9"
+
+services:
+  notification-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: notification-service
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "3003:3003"
+    depends_on:
+      notif-postgres:
+        condition: service_healthy
+      notif-redis:
+        condition: service_healthy
+      notif-activemq:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - notif_net
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: bunx prisma migrate deploy
+    env_file: .env
+    restart: "no"
+    depends_on:
+      notif-postgres:
+        condition: service_healthy
+    networks:
+      - notif_net
+
+  notif-postgres:
+    image: postgres:16-alpine
+    container_name: notif-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "123"
+      POSTGRES_DB: db_notification_service
+    volumes:
+      - notif_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d db_notification_service"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - notif_net
+
+  notif-redis:
+    image: redis:7-alpine
+    container_name: notif-redis
+    restart: unless-stopped
+    volumes:
+      - notif_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - notif_net
+
+  notif-activemq:
+    image: apache/activemq-classic:6.2.0
+    container_name: notif-activemq
+    restart: unless-stopped
+    environment:
+      ACTIVEMQ_USER: admin
+      ACTIVEMQ_PASSWORD: admin
+    ports:
+      - "8161:8161"     # Web console (opsional, hapus nanti di production)
+    expose:
+      - "61613"         # STOMP — hanya internal network
+    volumes:
+      - notif_activemq_data:/var/opt/activemq/data
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 61613 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - notif_net
+
+volumes:
+  notif_pg_data:
+  notif_redis_data:
+  notif_activemq_data:
+
+networks:
+  notif_net:
+    name: notif_net  
+    driver: bridge
