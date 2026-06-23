@@ -8,8 +8,8 @@ services:
     container_name: notification-service
     restart: unless-stopped
     env_file: .env
-    ports:
-      - "3003:3003"
+    # ports:
+    #   - "3003:3003"
     depends_on:
       notif-postgres:
         condition: service_healthy
